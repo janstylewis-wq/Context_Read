@@ -23,7 +23,7 @@ Scanned pages are read by a vision model. If that call fails, Tesseract is the f
 mkdir my-docs && cd my-docs
 contextread init                 # writes .env (random passwords filled in) and docker-compose.yml
 # put OPENAI_API_KEY (and OPENAI_BASE_URL for a gateway) in .env
-docker compose up -d             # Postgres on 5434, S3-compatible storage on 9100
+docker compose up -d             # Postgres on 5434, S3-compatible storage on 9100 (PG_PORT, S3_PORT in .env)
 contextread migrate              # create the tables
 contextread index report.pdf     # index a PDF: prints its id, cost and tree
 contextread ask "What was revenue in Q1?" --doc <id>
