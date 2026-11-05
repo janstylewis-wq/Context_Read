@@ -1,0 +1,19 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff
+        entry: .venv/bin/ruff check --fix
+        language: system
+        types: [python]
+      - id: ruff-format
+        name: ruff format
+        entry: .venv/bin/ruff format
+        language: system
+        types: [python]
+      - id: no-env-files
+        name: block .env files
+        entry: .env files hold secrets and must not be committed
+        language: fail
+        files: (^|/)\.env(\..*)?$
+        exclude: \.env\.example$
