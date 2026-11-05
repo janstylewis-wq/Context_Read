@@ -16,7 +16,7 @@ log = logging.getLogger("contextread.worker")
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s", force=True)
     worker_id = f"{socket.gethostname()}:{os.getpid()}"
     stopping = False
 
