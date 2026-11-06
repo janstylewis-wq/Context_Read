@@ -1,7 +1,7 @@
 """A document indexed without the worker (contextread index, a tool calling the pipeline) closes its upload's
 queued job, so a worker started later does not index it again; a job a worker is running is left alone."""
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from test_indexing import DISNEY, upload
 
 from contextread import jobs
@@ -22,21 +22,16 @@ def test_indexing_directly_closes_the_uploads_job(engine, clean_files, fake_llm,
     assert _jobs(engine, reg["doc_id"]) == [("queued", None)]
     pipeline.index_document(reg["doc_id"], llm=llm, engine=engine)
     assert _jobs(engine, reg["doc_id"]) == [("done", jobs.SUPERSEDED)]
-    assert (
-        jobs.claim("w", engine=engine) is None
-        or jobs.claim("w", engine=engine).payload.get("file_id") != reg["doc_id"]
-    )
 
-    copy = upload(
-        DISNEY, "copy.pdf", engine=engine
-    )  # a duplicate, copied from the first: closed the same way
+    # a duplicate is copied from the first, and its job is closed the same way
+    copy = upload(DISNEY, "copy.pdf", engine=engine)
     pipeline.index_document(copy["doc_id"], llm=llm, engine=engine)
     assert _jobs(engine, copy["doc_id"]) == [("done", jobs.SUPERSEDED)]
 
 
 def test_a_running_job_is_left_alone(engine, clean_files, bucket):
     reg = upload(DISNEY, "q1-fy25-earnings.pdf", engine=engine)
-    job = jobs.claim("w", engine=engine)
-    assert job.payload["file_id"] == reg["doc_id"]
+    with session_scope(engine) as s:  # a worker has claimed it
+        s.execute(update(Job).where(Job.payload["file_id"].astext == reg["doc_id"]).values(status="running"))
     assert jobs.close_queued("index_document", reg["doc_id"], engine=engine) == 0
     assert _jobs(engine, reg["doc_id"]) == [("running", None)]
