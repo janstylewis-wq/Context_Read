@@ -7,10 +7,14 @@ import re
 
 from sqlalchemy import Engine, select
 
+from .config import get_settings
 from .db import session_scope
 from .models import Block, File
 
-MAX_PAGES_PER_CALL = 10
+
+def pages_per_read() -> int:
+    """The most pages one page read returns (CHAT_PAGES_PER_READ)."""
+    return get_settings().chat_pages_per_read
 
 
 class ToolError(Exception):
@@ -149,8 +153,9 @@ def get_page_content(
         if f.status != "completed":
             return {"doc_name": f.file_name, "status": f.status, "content": []}
         wanted = parse_pages(pages, f.page_num or 0)
-        truncated = len(wanted) > MAX_PAGES_PER_CALL
-        wanted = wanted[:MAX_PAGES_PER_CALL]
+        limit = pages_per_read()
+        truncated = len(wanted) > limit
+        wanted = wanted[:limit]
         blocks = s.scalars(
             select(Block).where(Block.file_id == f.id, Block.page.in_(wanted)).order_by(Block.page, Block.ord)
         )
@@ -165,7 +170,5 @@ def get_page_content(
         "content": content,
     }
     if truncated:
-        result["note"] = (
-            f"Only the first {MAX_PAGES_PER_CALL} requested pages were returned; ask for the rest separately."
-        )
+        result["note"] = f"Only the first {limit} requested pages were returned; ask for the rest separately."
     return result

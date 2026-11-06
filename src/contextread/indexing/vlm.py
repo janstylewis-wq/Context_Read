@@ -14,15 +14,16 @@ import re
 
 from PIL import Image, ImageChops, ImageDraw
 
+from ..config import get_settings
 from ..llm import BudgetedLLM
 from .pdf_blocks import BULLET, PAGE_SCALE, Block, item_text, number_blocks
 
 log = logging.getLogger(__name__)
 
 MIN_TEXT_LAYER_CHARS = 20
-FULL_PAGE_IMAGE = 0.7  # share of the page an image must cover to count as a scan
 GLYPH_PATHS = 50  # small vector shapes the size of letters
-INK_WITHOUT_TEXT = 0.25  # share of dark pixels with no text-layer character under them
+# SCAN_IMAGE_SHARE (settings): share of the page one image must cover to count as a scan
+# SCAN_INK_WITHOUT_TEXT (settings): share of dark pixels with no text-layer character under them
 VLM_SCALE = 2.0
 LAYOUT_MAX_TOKENS = 8000  # every word of a dense page plus a box per block
 
@@ -39,12 +40,12 @@ Reply with JSON only: {"blocks": [{"text": "...", "bbox": [x0, y0, x1, y1]}]}"""
 def assess_page(plumber_page, image: Image.Image) -> str | None:
     """Why this page's text layer cannot be used as it is, or None when it can.
     `image` is the page rendered at PAGE_SCALE."""
-    chars = plumber_page.chars
+    chars, s = plumber_page.chars, get_settings()
     if len(chars) < MIN_TEXT_LAYER_CHARS:
         return "no_text"
     page_area = float(plumber_page.width * plumber_page.height) or 1.0
     for im in plumber_page.images:
-        if (im["x1"] - im["x0"]) * (im["bottom"] - im["top"]) / page_area >= FULL_PAGE_IMAGE:
+        if (im["x1"] - im["x0"]) * (im["bottom"] - im["top"]) / page_area >= s.scan_image_share:
             return "scanned"
     glyphs = sum(1 for c in plumber_page.curves if 2 < c["bottom"] - c["top"] < 20 and c["x1"] - c["x0"] < 20)
     if glyphs >= GLYPH_PATHS:
@@ -60,7 +61,7 @@ def assess_page(plumber_page, image: Image.Image) -> str | None:
         draw.rectangle([im["x0"] * k, im["top"] * k, im["x1"] * k, im["bottom"] * k], fill=255)
     dark = ink.histogram()[255]
     uncovered = ImageChops.subtract(ink, covered).histogram()[255]
-    if dark and uncovered / dark >= INK_WITHOUT_TEXT:
+    if dark and uncovered / dark >= s.scan_ink_without_text:
         return "outlined_text"
     return None
 
@@ -99,7 +100,7 @@ class VisionReader:
         # both default to reasoning before answering: 2-8x the time for the same transcription
         if self.llm.provider == "deepinfra":
             return {"temperature": 0, "extra_body": {"chat_template_kwargs": {"enable_thinking": False}}}
-        return {"reasoning_effort": "low"}
+        return {"reasoning_effort": "low"} if get_settings().is_reasoning(self.model) else {"temperature": 0}
 
 
 # ---------- Markdown -> blocks ----------

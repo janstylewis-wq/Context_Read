@@ -61,7 +61,28 @@ All settings go in `.env`. The ones you are most likely to change:
 | `PAGE_LIMIT`, `CHAT_LIMIT` | `0` | Per-user limits for the API (0 = none) |
 
 Default model names are those of the gateway this was built against. With api.openai.com directly, set
-models your account has.
+models your account has, and list your reasoning models' name prefixes in `REASONING_MODELS` (for example
+`o3,o4,gpt-5`): they are sent `reasoning_effort` instead of `temperature`.
+
+### Tuning
+
+The defaults were measured on legal filings and credit agreements. Indexing settings apply to documents
+indexed after the change; re-index a document to apply them to it.
+
+| Setting | Default | What it controls |
+|---|---|---|
+| `SECTION_HEADINGS_PAGES` | `5` | A section over this many pages is checked for headings the layout missed |
+| `HEADINGS_WINDOW_PAGES` | `10` | Pages read per call in that check |
+| `SECTION_SPLIT_PAGES`, `SECTION_SPLIT_CHARS` | `10`, `20000` | A section still over this many pages and characters is split into parts |
+| `SPLIT_PART_PAGES` | `5` | Pages per part; each part is titled and summarised by what it covers |
+| `SUMMARY_INPUT_CHARS` | `8000` | How much of a section its summary is written from |
+| `SCAN_IMAGE_SHARE` | `0.7` | A page one image covers this much of is read as a scan |
+| `SCAN_INK_WITHOUT_TEXT` | `0.25` | A page this much of whose ink has no text behind it is read by the vision model |
+| `CHAT_EFFORT` | `low` | Reasoning effort of a reasoning chat model; higher was slower for the same answers |
+| `CHAT_MAX_TURNS` | `8` | Model turns per question; the last one has to answer |
+| `CHAT_STRUCTURE_CHARS` | `400000` | The most of a tree the model sees at once; a larger tree keeps titles and pages, shortens summaries |
+| `CHAT_PAGES_PER_READ`, `CHAT_READ_CHARS` | `10`, `80000` | Pages, and characters, one page read returns |
+| `CHAT_ANSWER_MAX_TOKENS` | `1500` | Output limit of each chat turn |
 
 ## How it works
 

@@ -24,7 +24,6 @@ from .agent import run_chat
 log = logging.getLogger(__name__)
 
 TITLE_CHARS = 80
-THINKING_MODEL = "gpt-6-luna"
 
 
 class ChatError(Exception):
@@ -201,9 +200,8 @@ class ChatTurn:
                 )
             out.put(ev)
 
+        # every chat runs on CHAT_MODEL at CHAT_EFFORT, which is what "thinking" used to choose
         model, options = None, None
-        if self.thinking:
-            model, options = THINKING_MODEL, {"reasoning_effort": "low"}
         try:
             result = run_chat(
                 ("user", self.user_id),

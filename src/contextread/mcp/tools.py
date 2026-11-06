@@ -290,7 +290,8 @@ def get_page_content(
         out = doctools.get_page_content(owner, f.id, pages, engine=engine)
     except doctools.ToolError as e:
         raise ToolFailure("invalid_pages", str(e)) from e
-    returned = sorted({b["page"] for b in out["content"]} | set(wanted[: doctools.MAX_PAGES_PER_CALL]))
+    limit = doctools.pages_per_read()
+    returned = sorted({b["page"] for b in out["content"]} | set(wanted[:limit]))
     result = {
         "success": True,
         "doc_name": f.file_name,
@@ -300,11 +301,9 @@ def get_page_content(
         "content": out["content"],
         "page_images": [{"page": p, "image_path": _image_path(f.id, p)} for p in returned],
     }
-    if len(wanted) > doctools.MAX_PAGES_PER_CALL:
-        rest = wanted[doctools.MAX_PAGES_PER_CALL :]
-        result["note"] = (
-            f"At most {doctools.MAX_PAGES_PER_CALL} pages per call; pages {rest[0]}-{rest[-1]} were not returned."
-        )
+    if len(wanted) > limit:
+        rest = wanted[limit:]
+        result["note"] = f"At most {limit} pages per call; pages {rest[0]}-{rest[-1]} were not returned."
     return result
 
 

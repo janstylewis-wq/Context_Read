@@ -104,7 +104,7 @@ def test_pipeline_indexes_disney_release(engine, clean_files, fake_llm, bucket):
     # one LLM call per node summary plus the description, all through the guard
     assert len(client.calls) == len(nodes) + 1 == stats["summarized"] + 1
     # output stays bounded: the answer's own limit, or a reasoning model's floor (reasoning counts against it)
-    reasoning = config.get_settings().llm_default_model.startswith(budget.REASONING_MODELS)
+    reasoning = config.get_settings().is_reasoning(config.get_settings().llm_default_model)
     limit = budget.REASONING_MIN_TOKENS if reasoning else 150
     assert all(c["max_completion_tokens"] <= limit for c in client.calls)
     assert not reasoning or all("temperature" not in c for c in client.calls)

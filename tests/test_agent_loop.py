@@ -94,7 +94,7 @@ def test_chats_run_on_the_chat_model_at_low_effort(monkeypatch):
     llm = _structure_then_answer()
     result = _run(llm, monkeypatch, _tree(20, 200))
     chat = Settings().chat_model
-    assert llm.models == [(chat, agent.CHAT_EFFORT)] * 2 and result.model == chat
+    assert llm.models == [(chat, Settings().chat_effort)] * 2 and result.model == chat
 
 
 def test_a_model_the_caller_chose_is_kept(monkeypatch):

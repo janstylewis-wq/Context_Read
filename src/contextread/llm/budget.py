@@ -54,7 +54,7 @@ def _cost(model, input_tokens, output_tokens):
     return (input_tokens * p_in + output_tokens * p_out) / 1_000_000
 
 
-REASONING_MODELS = ("gpt-6",)  # model name prefixes
+# which models reason: REASONING_MODELS (settings), model name prefixes
 REASONING_EFFORT = "low"
 REASONING_MIN_TOKENS = 4000  # reasoning tokens count against the output limit
 
@@ -63,7 +63,7 @@ def _adapt(model, max_tokens, kwargs):
     """Request parameters for the model. A reasoning model takes reasoning_effort, not temperature, and
     spends output tokens on reasoning first, so an output limit sized for the answer alone (a 60-word summary)
     would leave it nothing to answer with. Callers pass what suits a plain model; this fits it to the one used."""
-    if not model.startswith(REASONING_MODELS):
+    if not get_settings().is_reasoning(model):
         return max_tokens, kwargs
     kwargs = {k: v for k, v in kwargs.items() if k not in ("temperature", "top_p")}
     kwargs.setdefault("reasoning_effort", REASONING_EFFORT)

@@ -10,6 +10,7 @@ import os
 import re
 from concurrent.futures import ThreadPoolExecutor
 
+from ..config import get_settings
 from ..llm import BudgetedLLM, BudgetExceeded
 from .pdf_blocks import Block
 
@@ -19,7 +20,6 @@ log = logging.getLogger(__name__)
 
 INTRO = " (intro)"
 MAX_NODE_CHARS = 80_000  # ~20k tokens, the recorded max_token_num_each_node
-SUMMARY_INPUT_CHARS = 8_000
 PAGES_PER_FALLBACK_NODE = 10
 
 
@@ -30,7 +30,7 @@ EXPAND_MAX_TOKENS = 6000
 async def _guarded_completion(model, prompt, **_params):
     """Flash's model call for expand, sent through the budget guard of the document being indexed."""
     llm = _EXPAND_LLM.get()
-    kwargs = {"reasoning_effort": "low"} if model.startswith("gpt-6") else {"temperature": 0}
+    kwargs = _call_options(model)
     resp = await asyncio.to_thread(
         llm.chat,
         model,
@@ -85,14 +85,16 @@ def expand_structure(structure: list[dict], page_texts: list[str], llm: Budgeted
         _EXPAND_LLM.reset(token)
 
 
-HEADINGS_PASS_PAGES = (
-    5  # a leaf over this many pages is read for the headings printed in it (expand's trigger)
-)
-LONG_LEAF_PAGES = 10  # the recorded max_page_num_each_node: a leaf over this many pages...
-LONG_LEAF_CHARS = 20_000  # ...and real text (not a run of signature pages) is cut into windows. The reference
-# needs 20k tokens (max_token_num_each_node), but its OCR titles such a leaf right; ours can carry a garbled title.
-HEADING_WINDOW_STEP = 9  # headings pass: 10-page calls, each starting on the page the one before ends on
-WINDOW_STEP = 4  # windows: 5 pages, each starting on the page the one before ends on (as the reference does)
+def _call_options(model: str) -> dict:
+    return {"reasoning_effort": "low"} if get_settings().is_reasoning(model) else {"temperature": 0}
+
+
+# Long leaves (settings): a leaf over SECTION_HEADINGS_PAGES pages is read for the headings printed in it
+# (expand's trigger), in HEADINGS_WINDOW_PAGES-page calls. One still over SECTION_SPLIT_PAGES pages (the
+# recorded max_page_num_each_node) and SECTION_SPLIT_CHARS characters of real text (not a run of signature
+# pages) is cut into SPLIT_PART_PAGES-page windows, each starting on the page the one before ends on, as the
+# reference does. The reference needs 20k tokens (max_token_num_each_node), but its OCR titles such a leaf
+# right; ours can carry a garbled title.
 WINDOW_PAGE_CHARS = 6_000
 HEADINGS_PROMPT = """Below are pages {start}-{end} of a document. The document's outline puts them inside the section
 "{section}" (pages {s0}-{e0}), but that outline may have missed headings, so these pages can also hold whole
@@ -143,7 +145,7 @@ def _pages_block(page_texts: list[str], start: int, end: int) -> str:
 
 def _ask_json(llm: BudgetedLLM, model: str, prompt: str, purpose: str) -> dict:
     """One JSON reply; {} when the call fails or the budget cap is reached."""
-    kwargs = {"reasoning_effort": "low"} if model.startswith("gpt-6") else {"temperature": 0}
+    kwargs = _call_options(model)
     try:
         resp = llm.chat(
             model,
@@ -162,9 +164,10 @@ def _ask_json(llm: BudgetedLLM, model: str, prompt: str, purpose: str) -> dict:
     return {}
 
 
-def _is_long(
-    node: dict, page_texts: list[str], pages: int = LONG_LEAF_PAGES, chars: int = LONG_LEAF_CHARS
-) -> bool:
+def _is_long(node: dict, page_texts: list[str], pages: int | None = None, chars: int | None = None) -> bool:
+    s = get_settings()
+    pages = s.section_split_pages if pages is None else pages
+    chars = s.section_split_chars if chars is None else chars
     s0, e0 = node["start_index"], node["end_index"]
     if node.get("nodes") or e0 - s0 + 1 <= pages:
         return False
@@ -189,11 +192,11 @@ def split_long_leaves(
 ) -> int:
     """Split long leaves, as the reference splits every node over its max_page_num_each_node (10 pages) and
     max_token_num_each_node (20k tokens).
-    1. Every leaf over HEADINGS_PASS_PAGES pages: the headings printed in it, read in 10-page calls and kept only
+    1. Every leaf over SECTION_HEADINGS_PAGES pages: the headings printed in it, read in HEADINGS_WINDOW_PAGES-page calls and kept only
        where printed on the page given. Layout analysis misses headings set like body text, and takes a clause
        heading for a section, which leaves whole sections or articles inside the node before them; expand cannot
        recover those, as it asks only for that node's own subsections.
-    2. Every leaf still over LONG_LEAF_PAGES pages and LONG_LEAF_CHARS characters (a definitions article, a
+    2. Every leaf still over SECTION_SPLIT_PAGES pages and SECTION_SPLIT_CHARS characters (a definitions article, a
        glossary, a schedule: no headings in it): 5-page windows, each titled and summarised from its own pages by
        the entries it holds. Otherwise the outline shows one node whose summary covers only its first pages.
     Returns how many leaves were split; a failed call leaves that part as it was (a window keeps a page-range
@@ -202,14 +205,15 @@ def split_long_leaves(
 
     if not model or model == "off":
         return 0
+    s = get_settings()
     split: set[int] = set()
 
     # 1. headings printed inside long leaves
-    leaves = [n for n, _ in preorder(structure) if _is_long(n, page_texts, HEADINGS_PASS_PAGES, chars=0)]
+    leaves = [n for n, _ in preorder(structure) if _is_long(n, page_texts, s.section_headings_pages, chars=0)]
     jobs = [
         (leaf, a, b)
         for leaf in leaves
-        for a, b in _windows(leaf["start_index"], leaf["end_index"], HEADING_WINDOW_STEP)
+        for a, b in _windows(leaf["start_index"], leaf["end_index"], max(s.headings_window_pages - 1, 1))
     ]
 
     def headings_in(job: tuple[dict, int, int]) -> dict:
@@ -268,7 +272,7 @@ def split_long_leaves(
         if _is_long(node, page_texts):
             node["nodes"] = [
                 {"title": f"{node['title']} (pages {a}-{b})", "start_index": a, "end_index": b}
-                for a, b in _windows(node["start_index"], node["end_index"], WINDOW_STEP)
+                for a, b in _windows(node["start_index"], node["end_index"], max(s.split_part_pages - 1, 1))
             ]
             jobs2 += [(node, w) for w in node["nodes"]]
             split.add(id(node))
@@ -493,7 +497,7 @@ def summarize_nodes(
             start=node["start_index"],
             end=node["end_index"],
             children=child_line,
-            text=(node.get("text") or "")[:SUMMARY_INPUT_CHARS],
+            text=(node.get("text") or "")[: get_settings().summary_input_chars],
         )
         try:
             resp = llm.chat(
@@ -528,7 +532,7 @@ def describe(
                 {
                     "role": "user",
                     "content": DESCRIPTION_PROMPT.format(
-                        title=title or "(untitled)", outline=outline[:SUMMARY_INPUT_CHARS]
+                        title=title or "(untitled)", outline=outline[: get_settings().summary_input_chars]
                     ),
                 }
             ],

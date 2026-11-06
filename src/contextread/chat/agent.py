@@ -13,13 +13,9 @@ from sqlalchemy import Engine
 from .. import doctools
 from ..config import get_settings
 from ..llm import BudgetedLLM
-from ..llm.budget import REASONING_MODELS
 
-MAX_TURNS = 8
-MAX_TOOL_RESULT_CHARS = 80_000  # ~20k tokens: 10 dense pages in full
-MAX_STRUCTURE_CHARS = 400_000  # ~100k tokens: the most one structure result may hold
-ANSWER_MAX_TOKENS = 1500
-CHAT_EFFORT = "low"  # reasoning effort for a reasoning chat model: higher is slower for the same answers
+# limits (CHAT_MAX_TURNS, CHAT_STRUCTURE_CHARS, CHAT_READ_CHARS, CHAT_PAGES_PER_READ, CHAT_ANSWER_MAX_TOKENS,
+# CHAT_EFFORT) are settings, read when a chat runs
 # a reply with no tool call that only says what the model means to do next ("I'll check that page", "Need pages
 # 5-9") is not an answer: the loop asks it to go on instead of returning it
 PLANNING_NOTE_CHARS = 300
@@ -31,6 +27,10 @@ PLANNING_NOTE = re.compile(
 CONTINUE = "Continue: call the tools to read what you need, then give your answer."
 MAX_NUDGES = 2
 COVERAGE_LIST_PAGES = 60  # up to this many pages, coverage names the unread pages; above it, a count
+
+PAGE_TOOL_DESCRIPTION = (
+    "The text of specific pages as blocks (page, type, block_id, text). At most {n} pages per call."
+)
 
 TOOLS = [
     {
@@ -67,8 +67,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "get_page_content",
-            "description": f"The text of specific pages as blocks (page, type, block_id, text). At most "
-            f"{doctools.MAX_PAGES_PER_CALL} pages per call.",
+            "description": PAGE_TOOL_DESCRIPTION,
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -80,6 +79,15 @@ TOOLS = [
         },
     },
 ]
+
+
+def _tools(pages_per_read: int) -> list[dict]:
+    tools = json.loads(json.dumps(TOOLS))
+    for t in tools:
+        if t["function"]["description"] == PAGE_TOOL_DESCRIPTION:
+            t["function"]["description"] = PAGE_TOOL_DESCRIPTION.format(n=pages_per_read)
+    return tools
+
 
 SYSTEM = """You answer questions about the user's documents. Find the answer in the documents with the tools:
 look at a document's structure, then read the pages that should hold the answer. Base every statement on
@@ -144,26 +152,26 @@ def _model_view(output: Any) -> str:
     so the same question on the same document makes the same request (and hits the cache).
     Nothing is cut mid-text: a structure too large keeps every title and page range with shorter
     summaries, and page content too large drops whole pages from the end with a note naming them."""
+    s = get_settings()
     if isinstance(output, dict):
         output = {k: v for k, v in output.items() if k != "doc_id"}
         if isinstance(output.get("structure"), list):
-            output["structure"], note = doctools.fit_structure(output["structure"], MAX_STRUCTURE_CHARS)
+            output["structure"], note = doctools.fit_structure(output["structure"], s.chat_structure_chars)
             if note:
                 output["note"] = note
-            return json.dumps(output, ensure_ascii=False)[: MAX_STRUCTURE_CHARS + 1000]
+            return json.dumps(output, ensure_ascii=False)[: s.chat_structure_chars + 1000]
         if isinstance(output.get("content"), list):
-            output = _fit_pages(output)
-    return json.dumps(output, ensure_ascii=False)[:MAX_TOOL_RESULT_CHARS]
+            output = _fit_pages(output, s.chat_read_chars)
+    return json.dumps(output, ensure_ascii=False)[: s.chat_read_chars]
 
 
-def _fit_pages(output: dict) -> dict:
+def _fit_pages(output: dict, limit: int) -> dict:
     """Drop whole pages from the end until the result fits, and say which pages to ask for again."""
     content = output["content"]
     pages = list(dict.fromkeys(b["page"] for b in content))
     dropped: list[int] = []
     while (
-        len(pages) > 1
-        and len(json.dumps({**output, "content": content}, ensure_ascii=False)) > MAX_TOOL_RESULT_CHARS - 300
+        len(pages) > 1 and len(json.dumps({**output, "content": content}, ensure_ascii=False)) > limit - 300
     ):
         dropped.insert(0, pages.pop())
         content = [b for b in content if b["page"] in pages]
@@ -184,7 +192,9 @@ def _complete(llm, model, convo, purpose, options, stream, emit) -> tuple[str, l
     """One model turn: (text, tool calls as {id, name, arguments}, finish reason, usage).
     When streaming, text is emitted as it arrives."""
     if not stream:
-        resp = llm.chat(model, convo, max_tokens=ANSWER_MAX_TOKENS, purpose=purpose, **options)
+        resp = llm.chat(
+            model, convo, max_tokens=get_settings().chat_answer_max_tokens, purpose=purpose, **options
+        )
         choice = resp.choices[0]
         calls = [
             {"id": tc.id, "name": tc.function.name, "arguments": tc.function.arguments or ""}
@@ -194,7 +204,8 @@ def _complete(llm, model, convo, purpose, options, stream, emit) -> tuple[str, l
     text: list[str] = []
     calls: dict[int, dict] = {}
     finish, usage, open_text = "stop", None, False
-    for chunk in llm.chat_stream(model, convo, max_tokens=ANSWER_MAX_TOKENS, purpose=purpose, **options):
+    max_tokens = get_settings().chat_answer_max_tokens
+    for chunk in llm.chat_stream(model, convo, max_tokens=max_tokens, purpose=purpose, **options):
         usage = chunk.usage or usage
         if not chunk.choices:
             continue
@@ -248,25 +259,27 @@ def run_chat(
         if m.get("role") in ("user", "assistant", "system")
     ]
     result = ChatResult(text="")
+    s = get_settings()
     options = dict(model_options or {})
     if model is None:
-        model = get_settings().chat_model
-        if model.startswith(REASONING_MODELS):
-            options.setdefault("reasoning_effort", CHAT_EFFORT)
+        model = s.chat_model
+        if s.is_reasoning(model):
+            options.setdefault("reasoning_effort", s.chat_effort)
     result.model = model
+    max_turns, tool_list = s.chat_max_turns, _tools(doctools.pages_per_read())
     if temperature is not None:
         options["temperature"] = temperature
     read: dict[str, set[int]] = {}
     nudges = 0
-    for turn in range(MAX_TURNS):
+    for turn in range(max_turns):
         emit({"type": "step-start"})
         # the last turn offers no tools, so the model has to answer with what it has read
-        tools = {} if turn == MAX_TURNS - 1 else {"tools": TOOLS}
+        tools = {} if turn == max_turns - 1 else {"tools": tool_list}
         text, calls, finish, usage = _complete(llm, model, convo, purpose, {**tools, **options}, stream, emit)
         if usage:
             result.prompt_tokens += usage.prompt_tokens
             result.completion_tokens += usage.completion_tokens
-        if not calls and turn < MAX_TURNS - 2 and nudges < MAX_NUDGES and _planning_note(text):
+        if not calls and turn < max_turns - 2 and nudges < MAX_NUDGES and _planning_note(text):
             nudges += 1
             convo += [{"role": "assistant", "content": text}, {"role": "user", "content": CONTINUE}]
             continue
