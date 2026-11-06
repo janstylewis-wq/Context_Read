@@ -38,6 +38,9 @@ contextread ask "What was revenue in Q1?" --doc <id>
 | `contextread init [DIR]` | Write `.env` and `docker-compose.yml` (`--force` overwrites) |
 | `contextread migrate` | Create or upgrade the database tables |
 | `contextread index FILE.pdf` | Index a PDF and print its tree (`--show-summaries` for the first few summaries) |
+| `contextread reindex DOC` | Index a document again under the current settings, keeping its id |
+| `contextread show DOC` | Its tree as indexed (`--summaries`), and the text of chosen pages (`--pages 10-12`) |
+| `contextread check` | Settings, database, storage, and one tiny call per model (`--no-models` skips those) |
 | `contextread list` | Indexed documents with their ids and status |
 | `contextread ask "QUESTION" --doc ID` | Answer from one or more documents (`--doc` repeats; `--cite` adds block citations) |
 | `contextread serve` | API server: REST, chat completions, MCP (`--host`, `--port`, `--reload`) |
@@ -106,6 +109,24 @@ indexed after the change; re-index a document to apply them to it.
 | `CHAT_STRUCTURE_CHARS` | `400000` | The most of a tree the model sees at once; a larger tree keeps titles and pages, shortens summaries |
 | `CHAT_PAGES_PER_READ`, `CHAT_READ_CHARS` | `10`, `80000` | Pages, and characters, one page read returns |
 | `CHAT_ANSWER_MAX_TOKENS` | `1500` | Output limit of each chat turn |
+
+## Claude skills
+
+The repository is also a Claude Code plugin marketplace, with four skills for working with ContextRead:
+
+| Skill | For |
+|---|---|
+| `contextread:setup` | Install, `.env` (provider, model names, spend cap), Docker, first document |
+| `contextread:evaluate` | Score answers on your documents with `contextread eval`, review the questions, explain misses |
+| `contextread:diagnose` | Trace a wrong answer through page text, tree and agent reads to its cause |
+| `contextread:tune` | Change one setting at a time, re-index if needed, keep only what measurably helps |
+
+```
+/plugin install contextread --marketplace janstylewis-wq/contextread
+```
+
+Then ask Claude things like "set up contextread", "how accurate is it on my contracts?", "why did it miss
+this?" or "tune it for my scanned reports".
 
 ## How it works
 

@@ -3,11 +3,14 @@
 contextread init               write .env and docker-compose.yml into this folder
 contextread migrate            create or upgrade the database tables
 contextread index FILE.pdf     index a PDF (billed, budget-guarded) and print its tree
+contextread reindex DOC        index a document again under the current settings (same id)
 contextread list               the indexed documents and their ids
 contextread ask "Q" --doc ID   answer a question from one or more documents
 contextread serve / worker     run the API server / the indexing worker
 contextread create-key         create a user and an API key for the API and MCP server
 contextread eval make/run/compare   measure answers on your own documents
+contextread check              is this setup ready (settings, database, storage, models)
+contextread show DOC           a document's tree (and --pages text) as the index holds it
 """
 
 import argparse
@@ -100,17 +103,30 @@ def _index(args) -> None:
     up = files.create_upload(args.owner, Path(args.pdf).name)
     httpx.put(up["url"], content=data, headers={"content-type": "application/pdf"}).raise_for_status()
     reg = files.register_upload("user", args.owner, Path(args.pdf).name, up["storage_key"])
+    _run_index(reg["doc_id"], args.show_summaries)
+
+
+def _reindex(args) -> None:
+    from . import doctools
+    from .db import session_scope
+
+    with session_scope() as s:
+        doc_id = doctools.resolve(s, ("user", args.owner), args.doc).id
+    _run_index(doc_id, args.show_summaries, reuse_duplicate=False)
+
+
+def _run_index(doc_id: str, show_summaries: bool, reuse_duplicate: bool = True) -> None:
     llm = BudgetedLLM()
     spent_before = llm.spent()
     started = time.monotonic()
-    stats = pipeline.index_document(reg["doc_id"], llm=llm)
+    stats = pipeline.index_document(doc_id, llm=llm, reuse_duplicate=reuse_duplicate)
     seconds = time.monotonic() - started
-    record = files.file_record(reg["doc_id"])
+    record = files.file_record(doc_id)
     nodes = tree.preorder(record["structure"] or [])
     print(
         json.dumps(
             {
-                "doc_id": reg["doc_id"],
+                "doc_id": doc_id,
                 **stats,
                 "seconds": round(seconds, 1),
                 "spend_usd": round(llm.spent() - spent_before, 6),
@@ -126,7 +142,7 @@ def _index(args) -> None:
         print(
             f"{'  ' * (depth - 1)}- [{node['node_id']}] {node['title'][:70]} (p{node['start_index']}-{node['end_index']})"
         )
-    if args.show_summaries:
+    if show_summaries:
         for node, _ in nodes[:5]:
             print(f"\n[{node['node_id']}] {node['title']}\n  {node.get('summary', '')}")
 
@@ -183,6 +199,19 @@ def _eval_compare(args) -> None:
     print(ev.compare(json.loads(Path(args.before).read_text()), json.loads(Path(args.after).read_text())))
 
 
+def _check(args) -> None:
+    from . import diagnostics
+
+    if not diagnostics.check(models=not args.no_models):
+        raise SystemExit(1)
+
+
+def _show(args) -> None:
+    from . import diagnostics
+
+    diagnostics.show(("user", args.owner), args.doc, summaries=args.summaries, pages=args.pages)
+
+
 def _create_key(args) -> None:
     user_id = auth.ensure_user(args.email)
     secret, key_id = auth.create_api_key(user_id, args.product, args.name)
@@ -218,6 +247,12 @@ def main() -> None:
     p.add_argument("--show-summaries", action="store_true")
     p.set_defaults(func=_index)
 
+    ri = sub.add_parser("reindex", help="index a document again under the current settings (same id)")
+    ri.add_argument("doc", help="document id or name")
+    ri.add_argument("--owner", default="dev-user")
+    ri.add_argument("--show-summaries", action="store_true")
+    ri.set_defaults(func=_reindex)
+
     ls = sub.add_parser("list", help="the indexed documents and their ids")
     ls.add_argument("--owner", default="dev-user")
     ls.add_argument("--limit", type=int, default=50)
@@ -244,6 +279,17 @@ def main() -> None:
     k.add_argument("--product", choices=["cloud", "search"], default="cloud")
     k.add_argument("--name")
     k.set_defaults(func=_create_key)
+
+    ck = sub.add_parser("check", help="is this setup ready: settings, database, storage, models")
+    ck.add_argument("--no-models", action="store_true", help="skip the model calls (one tiny call per model)")
+    ck.set_defaults(func=_check)
+
+    sh = sub.add_parser("show", help="a document's tree as the index holds it, and the text of chosen pages")
+    sh.add_argument("doc", help="document id or name")
+    sh.add_argument("--summaries", action="store_true", help="each section's summary under its title")
+    sh.add_argument("--pages", help="also print these pages' text, e.g. 12 or 10-14")
+    sh.add_argument("--owner", default="dev-user")
+    sh.set_defaults(func=_show)
 
     ev = sub.add_parser("eval", help="measure answers on your own documents")
     evs = ev.add_subparsers(required=True)

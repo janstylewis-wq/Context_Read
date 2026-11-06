@@ -1,0 +1,14 @@
+{
+  "name": "contextread",
+  "description": "Claude skills for ContextRead: setup, evaluate, diagnose, tune.",
+  "owner": {
+    "name": "janstylewis-wq"
+  },
+  "plugins": [
+    {
+      "name": "contextread",
+      "source": "./plugins/contextread",
+      "description": "Set up ContextRead, measure its answers on your own documents, find why it misses, and tune it."
+    }
+  ]
+}

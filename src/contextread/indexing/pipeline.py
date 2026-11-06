@@ -201,7 +201,10 @@ def index_document(
     llm: BudgetedLLM | None = None,
     engine: Engine | None = None,
     reader: VisionReader | None = None,
+    reuse_duplicate: bool = True,
 ) -> dict:
+    """Index one uploaded document. A file this owner already has indexed is copied from that copy unless
+    reuse_duplicate is False (re-indexing under changed settings)."""
     started = time.monotonic()
     with session_scope(engine) as s:
         file = s.get(File, file_id)
@@ -223,7 +226,7 @@ def index_document(
                 )
                 .limit(1)
             ).first()
-        if source is not None:
+        if source is not None and reuse_duplicate:
             _copy_from_duplicate(engine, file, source)
             return {"file_id": file_id, "duplicate_of": source.id}
 
