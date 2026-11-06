@@ -1,6 +1,6 @@
 {
   "name": "contextread",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Set up ContextRead, measure its answers on your own documents, find why it misses, and tune it.",
   "author": { "name": "janstylewis-wq" },
   "repository": "https://github.com/janstylewis-wq/contextread",

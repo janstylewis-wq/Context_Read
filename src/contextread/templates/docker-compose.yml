@@ -1,6 +1,6 @@
 # Postgres and S3-compatible storage for ContextRead. Start with: docker compose up -d
-# Values come from the .env file next to this one (written by `contextread init`).
-name: contextread
+# Values come from the .env file next to this one (written by `contextread init`). The Docker project is named
+# after this folder, so the database and storage of each folder set up with `contextread init` stay separate.
 
 services:
   postgres:

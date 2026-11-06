@@ -11,7 +11,7 @@ Needs Python 3.12+, Docker (for Postgres and object storage) and access to this 
 ```bash
 pip install "git+https://github.com/janstylewis-wq/contextread.git"
 # or a fixed version
-pip install "git+https://github.com/janstylewis-wq/contextread.git@v0.2.0"
+pip install "git+https://github.com/janstylewis-wq/contextread.git@v0.3.0"
 ```
 
 Scanned pages are read by a vision model. If that call fails, Tesseract is the fallback, so install it too
@@ -21,21 +21,26 @@ Scanned pages are read by a vision model. If that call fails, Tesseract is the f
 
 ```bash
 mkdir my-docs && cd my-docs
-contextread init                 # writes .env (random passwords filled in) and docker-compose.yml
+contextread init                 # asks for your model names; writes .env (random passwords, free ports)
+                                 # and docker-compose.yml
 # put OPENAI_API_KEY (and OPENAI_BASE_URL for a gateway) in .env
-docker compose up -d             # Postgres on 5434, S3-compatible storage on 9100 (PG_PORT, S3_PORT in .env)
+docker compose up -d             # Postgres and S3-compatible storage (ports PG_PORT, S3_PORT in .env)
 contextread migrate              # create the tables
+contextread check                # every model answers, database and storage are reachable
 contextread index report.pdf     # index a PDF: prints its id, cost and tree
 contextread ask "What was revenue in Q1?" --doc <id>
 ```
 
 `contextread` reads `.env` from the folder you run it in; variables already set in the environment win.
+Each folder set up with `contextread init` is its own Docker project, named after the folder, with its own
+database and storage. `init` picks ports that are free at the time. If you set up two folders before starting
+either, give the second one other `PG_PORT` and `S3_PORT` values.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `contextread init [DIR]` | Write `.env` and `docker-compose.yml` (`--force` overwrites) |
+| `contextread init [DIR]` | Write `.env` and `docker-compose.yml`, asking for the model names (`--chat-model` etc. or `--yes` to skip asking; `--force` overwrites) |
 | `contextread migrate` | Create or upgrade the database tables |
 | `contextread index FILE.pdf` | Index a PDF and print its tree (`--show-summaries` for the first few summaries) |
 | `contextread reindex DOC` | Index a document again under the current settings, keeping its id |

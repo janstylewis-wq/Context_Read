@@ -27,8 +27,68 @@ from . import auth, files, storage
 from .indexing import pipeline, tree
 from .llm import BudgetedLLM
 
+# (setting, flag, what it does): the model names init asks for, with the package defaults offered
+MODEL_SETTINGS = [
+    (
+        "CHAT_MODEL",
+        "chat_model",
+        "answers questions (the strongest model you can use; a reasoning model did best)",
+    ),
+    ("LLM_DEFAULT_MODEL", "summary_model", "writes section summaries (a small, cheap model)"),
+    ("OCR_VLM_MODEL", "vision_model", "reads scanned pages (must accept images; off = Tesseract only)"),
+    ("TREE_EXPAND_MODEL", "tree_model", "finds headings, reads tables of contents (off = layout only)"),
+    (
+        "REASONING_MODELS",
+        "reasoning_models",
+        "name prefixes of reasoning models, comma-separated (e.g. o3,o4,gpt-5)",
+    ),
+]
+
+
+def _free_port(preferred: int) -> int:
+    """preferred when nothing listens on it, otherwise the next free port above it."""
+    import socket
+
+    for port in range(preferred, preferred + 200):
+        with socket.socket() as s:
+            try:
+                s.bind(("127.0.0.1", port))
+                return port
+            except OSError:
+                continue
+    return preferred
+
+
+def _model_choices(args) -> dict[str, str]:
+    """The model names to write: given as flags, asked for at a terminal (Enter keeps the default), or the
+    defaults when neither (a script)."""
+    import sys
+
+    from .config import Settings
+
+    fields = {
+        "CHAT_MODEL": "chat_model",
+        "LLM_DEFAULT_MODEL": "llm_default_model",
+        "OCR_VLM_MODEL": "ocr_vlm_model",
+        "TREE_EXPAND_MODEL": "tree_expand_model",
+        "REASONING_MODELS": "reasoning_models",
+    }
+    defaults = {k: Settings.model_fields[f].default for k, f in fields.items()}
+    ask = sys.stdin.isatty() and not args.yes
+    if ask:
+        print("Model names, as your provider calls them (Enter keeps the default shown):")
+    chosen = {}
+    for key, flag, what in MODEL_SETTINGS:
+        value = getattr(args, flag)
+        if value is None and ask:
+            value = input(f"  {key}: {what}\n    [{defaults[key]}] ").strip()
+        chosen[key] = value or defaults[key]
+    return chosen
+
 
 def _init(args) -> None:
+    import re
+
     here = Path(args.dir)
     templates = resources.files("contextread") / "templates"
     targets = {here / ".env": "env.template", here / "docker-compose.yml": "docker-compose.yml"}
@@ -38,18 +98,25 @@ def _init(args) -> None:
     env = (templates / "env.template").read_text()
     for placeholder in ("__PG_PASSWORD__", "__S3_SECRET__", "__INTERNAL_TOKEN__"):
         env = env.replace(placeholder, secrets.token_urlsafe(24))
+    for key, value in _model_choices(args).items():  # the commented default line becomes the chosen value
+        env = re.sub(rf"^# {key}=.*$", f"{key}={value}", env, count=1, flags=re.M)
+    ports = {"PG_PORT": _free_port(5434), "S3_PORT": _free_port(9100)}
+    for key, port in ports.items():
+        env = re.sub(rf"^{key}=.*$", f"{key}={port}", env, count=1, flags=re.M)
     here.mkdir(parents=True, exist_ok=True)
     (here / ".env").write_text(env)
     (here / ".env").chmod(0o600)
     (here / "docker-compose.yml").write_text((templates / "docker-compose.yml").read_text())
     print(
-        f"wrote {here / '.env'} and {here / 'docker-compose.yml'}\n"
+        f"wrote {here / '.env'} and {here / 'docker-compose.yml'}"
+        f" (Postgres on port {ports['PG_PORT']}, storage on {ports['S3_PORT']})\n"
         "next:\n"
         "  1. put your OPENAI_API_KEY (and OPENAI_BASE_URL for a gateway) in .env\n"
         "  2. docker compose up -d\n"
         "  3. contextread migrate\n"
-        "  4. contextread index your.pdf\n"
-        '  5. contextread ask "your question" --doc <id printed by index>'
+        "  4. contextread check            (each model answers; the model names are in .env)\n"
+        "  5. contextread index your.pdf\n"
+        '  6. contextread ask "your question" --doc <id printed by index>'
     )
 
 
@@ -236,6 +303,9 @@ def main() -> None:
     i = sub.add_parser("init", help="write .env and docker-compose.yml into a folder")
     i.add_argument("dir", nargs="?", default=".")
     i.add_argument("--force", action="store_true", help="overwrite existing files")
+    i.add_argument("--yes", action="store_true", help="do not ask; use the given or default model names")
+    for key, flag, what in MODEL_SETTINGS:
+        i.add_argument(f"--{flag.replace('_', '-')}", dest=flag, help=f"{key}: {what}")
     i.set_defaults(func=_init)
 
     m = sub.add_parser("migrate", help="create or upgrade the database tables")

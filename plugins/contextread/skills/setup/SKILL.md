@@ -27,24 +27,36 @@ confusing error several steps later.
 Prefer an isolated install so the package's dependencies (about 500 MB) don't mix with other projects:
 
 ```bash
-uv tool install "git+ssh://git@github.com/janstylewis-wq/contextread.git"   # or a fixed version: ...contextread.git@v0.2.0
+uv tool install "git+ssh://git@github.com/janstylewis-wq/contextread.git"   # or a fixed version: ...contextread.git@v0.3.0
 # without uv:
 python3 -m venv ~/.venvs/contextread && ~/.venvs/contextread/bin/pip install "git+ssh://git@github.com/janstylewis-wq/contextread.git"
 ```
 
 Confirm with `contextread --help`.
 
-## 3. A folder with settings
+## 3. Model names
+
+Before writing any settings, ask which provider they use and which models it offers, then pick one for each
+job in the table under step 5 (what each model does, and what to pick). The defaults (`gpt-6-luna`, `gpt-4o-mini`) are the names on the gateway this was built
+against, and most providers won't have them.
+
+## 4. A folder with settings
+
+Pass the chosen names to `init` as flags. When you run it there is no terminal to answer its questions, so
+without flags it writes the defaults:
 
 ```bash
 mkdir my-docs && cd my-docs
-contextread init        # writes .env (random database/storage passwords) and docker-compose.yml
+contextread init --chat-model <name> --summary-model <name> --vision-model <name> --tree-model <name> \
+  --reasoning-models <prefixes>
+# writes .env (random database/storage passwords, free ports) and docker-compose.yml
 ```
 
 `contextread` reads `.env` from the folder it runs in, so run every later command from this folder.
-Variables already set in the shell take precedence over the file.
+Variables already set in the shell take precedence over the file. Each folder is its own Docker project, named
+after the folder.
 
-## 4. Model provider and model names
+## 5. Provider key
 
 `.env` holds secrets. Don't print it or paste it into the conversation, and don't ask the person to paste
 their API key into the chat. Ask them to open `.env` in their editor and fill in:
@@ -56,21 +68,20 @@ their API key into the chat. Ask them to open `.env` in their editor and fill in
 
 You may edit the non-secret lines yourself, such as model names and limits, after showing the change.
 
-The default model names (`gpt-6-luna`, `gpt-4o-mini`) are the names on the gateway this was built against,
-and most providers won't have them. Ask which models their provider offers, then set:
+The model settings (`init`'s flags in brackets):
 
 | Setting | Job | What to pick |
 |---|---|---|
-| `CHAT_MODEL` | Answers questions: reads the tree, picks pages | The strongest model they can afford; a reasoning model did clearly best |
-| `LLM_DEFAULT_MODEL` | Section summaries and document descriptions | A small, cheap, fast model |
-| `OCR_VLM_MODEL` | Reads scanned or image-only pages | Must accept images; `off` = Tesseract only |
-| `TREE_EXPAND_MODEL` | Finds headings the layout missed, splits long sections | A capable model; `off` = layout-only tree |
-| `REASONING_MODELS` | Name prefixes of reasoning models, comma-separated (for example `o3,o4,gpt-5`) | These are sent `reasoning_effort` instead of `temperature`; a wrong value makes those calls fail |
+| `CHAT_MODEL` (`--chat-model`) | Answers questions: reads the tree, picks pages | The strongest model they can afford; a reasoning model did clearly best |
+| `LLM_DEFAULT_MODEL` (`--summary-model`) | Section summaries and document descriptions | A small, cheap, fast model |
+| `OCR_VLM_MODEL` (`--vision-model`) | Reads scanned or image-only pages | Must accept images; `off` = Tesseract only |
+| `TREE_EXPAND_MODEL` (`--tree-model`) | Finds headings the layout missed, splits long sections | A capable model; `off` = layout-only tree |
+| `REASONING_MODELS` (`--reasoning-models`) | Name prefixes of reasoning models, comma-separated (for example `o3,o4,gpt-5`) | These are sent `reasoning_effort` instead of `temperature`; a wrong value makes those calls fail |
 
 Why the chat model matters most: on legal filings, a small model answered 47 of the 56 questions a reasoning
 model answered on the same documents, and took more steps to do it.
 
-## 5. Database and storage
+## 6. Database and storage
 
 ```bash
 docker compose up -d     # Postgres on PG_PORT (5434), storage on S3_PORT (9100)
@@ -80,7 +91,7 @@ contextread migrate      # creates the tables
 If a port is taken (`address already in use`), change `PG_PORT` or `S3_PORT` in `.env` and run
 `docker compose up -d` again. The connection settings below them follow automatically.
 
-## 6. Check everything
+## 7. Check everything
 
 ```bash
 contextread check
@@ -98,7 +109,7 @@ needed is broken. Each model gets one tiny call, a fraction of a cent. Common fa
 
 Re-run until every needed line is `ok`. A `note` line is information, not a failure.
 
-## 7. First document and answer
+## 8. First document and answer
 
 ```bash
 contextread index some.pdf               # prints the document id, cost and the tree

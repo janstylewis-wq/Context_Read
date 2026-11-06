@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 CACHE_ROOT = Path.home() / ".cache" / "contextread"
@@ -26,7 +26,9 @@ class Settings(BaseSettings):
     chat_model: str = Field(default="gpt-6-luna", alias="CHAT_MODEL")
     llm_cache_enabled: bool = Field(default=True, alias="LLM_CACHE")
     llm_cache_dir: Path = Field(default=CACHE_ROOT / "llm", alias="LLM_CACHE_DIR")
-    deepinfra_api_key: str | None = Field(default=None, alias="deep_infra")
+    deepinfra_api_key: str | None = Field(
+        default=None, validation_alias=AliasChoices("DEEPINFRA_API_KEY", "deep_infra")
+    )
     deepinfra_base_url: str = Field(default="https://api.deepinfra.com/v1/openai", alias="DEEPINFRA_BASE_URL")
     deepinfra_budget_usd: float = Field(default=5.0, alias="DEEPINFRA_BUDGET_USD")
     # pages without a usable text layer are read by a vision model ("off" uses Tesseract only)
