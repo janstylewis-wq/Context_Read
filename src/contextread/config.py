@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # flash's expand step: a model splits sections over 5 pages that the layout left whole (headings set
     # like body text, as in many contracts and reports); "off" keeps the layout-only tree
     tree_expand_model: str = Field(default="gpt-6-luna", alias="TREE_EXPAND_MODEL")
+    # a document whose first 20 pages hold a table of contents with page numbers takes its outline from it
+    # (PageIndex classic), read by TREE_EXPAND_MODEL; false = layout tree only
+    contents_outline: bool = Field(default=True, alias="CONTENTS_OUTLINE")
     # plan limits per user; 0 = no limit (the default). The reference free plan is 1,000 pages, 100 chats
     page_limit: int = Field(default=0, alias="PAGE_LIMIT")
     chat_limit: int = Field(default=0, alias="CHAT_LIMIT")

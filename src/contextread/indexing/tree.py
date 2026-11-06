@@ -2,6 +2,7 @@
 our blocks, node summaries and the document description from the budget-guarded LLM."""
 
 import asyncio
+import contextlib
 import contextvars
 import io
 import json
@@ -40,6 +41,127 @@ async def _guarded_completion(model, prompt, **_params):
         **kwargs,
     )
     return resp.choices[0].message.content
+
+
+# ---------- the document's own contents as its outline (PageIndex classic) ----------
+
+_CONTENTS_LLM: contextvars.ContextVar = contextvars.ContextVar("contents_llm")
+_CONTENTS_SLOTS: contextvars.ContextVar = contextvars.ContextVar("contents_slots")
+CONTENTS_CHECK_PAGES = 20  # the reference's toc_check_page_num: contents are looked for in the first 20 pages
+CONTENTS_MAX_TOKENS = 16000  # the contents of a long agreement as JSON, in one reply
+CONTENTS_CONCURRENCY = 8
+
+
+class _QuietLog:
+    def info(self, *a, **k):
+        pass
+
+    warning = error = debug = info
+
+
+def _contents_chat(model, prompt, chat_history=None):
+    llm = _CONTENTS_LLM.get()
+    messages = list(chat_history or []) + [{"role": "user", "content": prompt}]
+    resp = llm.chat(
+        model, messages, max_tokens=CONTENTS_MAX_TOKENS, purpose="index.contents", **_call_options(model)
+    )
+    return resp.choices[0]
+
+
+def _contents_completion(model, prompt, chat_history=None, return_finish_reason=False):
+    """classic's synchronous model call, through the budget guard of the document being indexed."""
+    choice = _contents_chat(model, prompt, chat_history)
+    content = choice.message.content or ""
+    if return_finish_reason:
+        return content, ("max_output_reached" if choice.finish_reason == "length" else "finished")
+    return content
+
+
+async def _contents_acompletion(model, prompt, **_params):
+    async with _CONTENTS_SLOTS.get():
+        choice = await asyncio.to_thread(_contents_chat, model, prompt)
+    return choice.message.content or ""
+
+
+def _clean_contents_tree(nodes: list[dict]) -> list[dict]:
+    return [
+        {
+            "title": str(n.get("title") or "").strip() or "(untitled)",
+            "start_index": n["start_index"],
+            "end_index": n["end_index"],
+            **({"nodes": _clean_contents_tree(n["nodes"])} if n.get("nodes") else {}),
+        }
+        for n in nodes
+        if isinstance(n.get("start_index"), int) and isinstance(n.get("end_index"), int)
+    ]
+
+
+async def _contents_outline(classic, page_list, found, opt) -> list[dict] | None:
+    from pageindex.tree_optimize import add_intro_nodes
+    from pageindex.utils import add_preface_if_needed, post_processing
+
+    _CONTENTS_SLOTS.set(asyncio.Semaphore(CONTENTS_CONCURRENCY))
+    log_ = _QuietLog()
+    items = classic.process_toc_with_page_numbers(
+        found["toc_content"],
+        found["toc_page_list"],
+        page_list,
+        toc_check_page_num=opt.toc_check_page_num,
+        model=opt.model,
+        logger=log_,
+    )
+    items = [i for i in items if i.get("physical_index") is not None]
+    items = classic.validate_and_truncate_physical_indices(items, len(page_list), start_index=1, logger=log_)
+    accuracy, wrong = await classic.verify_toc(page_list, items, start_index=1, model=opt.model)
+    log.info("contents outline: %d entries, %.0f%% found on their page", len(items), 100 * accuracy)
+    if accuracy <= 0.6:  # the reference then tries other modes; here the layout tree is kept
+        return None
+    if wrong:
+        items, _ = await classic.fix_incorrect_toc_with_retries(
+            items, page_list, wrong, start_index=1, max_attempts=3, model=opt.model, logger=log_
+        )
+    items = add_preface_if_needed(items)
+    items = await classic.check_title_appearance_in_start_concurrent(
+        items, page_list, model=opt.model, logger=log_
+    )
+    valid = [i for i in items if i.get("physical_index") is not None]
+    if not valid:
+        return None
+    return _clean_contents_tree(add_intro_nodes(post_processing(valid, len(page_list))))
+
+
+def contents_structure(page_texts: list[str], llm: BudgetedLLM, model: str) -> list[dict] | None:
+    """The tree from the document's own table of contents, as PageIndex classic builds it (and the hosted service,
+    whose job config carries classic's toc_check_page_num): contents pages are looked for in the first 20 pages;
+    when their entries carry page numbers, each entry is placed on its real page (printed numbers shifted by the
+    offset found between the two), checked to appear there, and misplaced ones are corrected. None when the
+    document has no such contents, or the entries cannot be placed (over 40% not found on their page), and on
+    any failure: the layout tree is used then. A contract's contents list every section, including those whose
+    headings are set like body text, which layout analysis misses."""
+    from types import SimpleNamespace
+
+    from pageindex import page_index_classic as classic
+
+    if not model or model == "off" or not get_settings().contents_outline:
+        return None
+    classic.llm_completion = _contents_completion  # classic's model hooks
+    classic.llm_acompletion = _contents_acompletion
+    page_list = [(t or "", max(1, len(t or "") // 4)) for t in page_texts]
+    opt = SimpleNamespace(model=model, toc_check_page_num=CONTENTS_CHECK_PAGES)
+    token = _CONTENTS_LLM.set(llm)
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):  # classic prints its progress
+            found = classic.check_toc(page_list, opt)
+            if not (
+                (found.get("toc_content") or "").strip() and found.get("page_index_given_in_toc") == "yes"
+            ):
+                return None
+            return asyncio.run(_contents_outline(classic, page_list, found, opt)) or None
+    except Exception as e:  # noqa: BLE001 - any failure keeps the layout tree
+        log.warning("contents outline failed (%s: %s); keeping the layout tree", type(e).__name__, e)
+        return None
+    finally:
+        _CONTENTS_LLM.reset(token)
 
 
 def flash_structure(pdf_bytes: bytes) -> tuple[list[dict], str | None, str]:
@@ -188,7 +310,12 @@ def _nest(heads: list[tuple[int, int, str]], end: int) -> list[dict]:
 
 
 def split_long_leaves(
-    structure: list[dict], page_texts: list[str], llm: BudgetedLLM, model: str, workers: int = 4
+    structure: list[dict],
+    page_texts: list[str],
+    llm: BudgetedLLM,
+    model: str,
+    workers: int = 4,
+    headings: bool = True,
 ) -> int:
     """Split long leaves, as the reference splits every node over its max_page_num_each_node (10 pages) and
     max_token_num_each_node (20k tokens).
@@ -199,6 +326,8 @@ def split_long_leaves(
     2. Every leaf still over SECTION_SPLIT_PAGES pages and SECTION_SPLIT_CHARS characters (a definitions article, a
        glossary, a schedule: no headings in it): 5-page windows, each titled and summarised from its own pages by
        the entries it holds. Otherwise the outline shows one node whose summary covers only its first pages.
+    headings=False skips step 1, for a tree built from the document's contents (its headings are already in it,
+    and a headings pass over the contents pages would take their entries for headings).
     Returns how many leaves were split; a failed call leaves that part as it was (a window keeps a page-range
     title)."""
     from pageindex.tree_optimize import heading_key
@@ -209,7 +338,11 @@ def split_long_leaves(
     split: set[int] = set()
 
     # 1. headings printed inside long leaves
-    leaves = [n for n, _ in preorder(structure) if _is_long(n, page_texts, s.section_headings_pages, chars=0)]
+    leaves = (
+        [n for n, _ in preorder(structure) if _is_long(n, page_texts, s.section_headings_pages, chars=0)]
+        if headings
+        else []
+    )
     jobs = [
         (leaf, a, b)
         for leaf in leaves

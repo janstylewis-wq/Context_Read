@@ -31,8 +31,9 @@ from .vlm import VLM_SCALE, VisionReader, assess_page, read_page
 log = logging.getLogger(__name__)
 
 # 4: flash expand splits sections the layout leaves whole; 5: long leaves split into windows;
-# 6: a section is summarised from its whole text (subsections included), and only from that text
-PIPELINE_VERSION = 6
+# 6: a section is summarised from its whole text (subsections included), and only from that text;
+# 7: a document with a table of contents (page numbers given) takes its outline from it
+PIPELINE_VERSION = 7
 THUMBNAIL_SCALE = 0.5
 HEADINGS_TREE_SHARE = (
     0.5  # the title-block tree replaces flash's only when this share of pages has no text layer
@@ -269,18 +270,21 @@ def index_document(
             from_headings = tree.heading_structure(blocks, page_count, llm)
             if from_headings:
                 structure, toc_source = from_headings, "headings"
+        texts = {p["page"]: p.get("text") or "" for p in pages}
+        page_texts = [texts.get(n, "") for n in range(1, page_count + 1)]
+        from_contents = tree.contents_structure(page_texts, llm, expand_model) if expanding else None
+        if from_contents:
+            structure, toc_source = from_contents, "contents"
         if toc_source in ("pages", "unreadable") or not structure:
             structure = tree.page_fallback_structure(page_count, page_leaves=not expanding)
             toc_source = "pages"
         if expanding:
-            texts = {p["page"]: p.get("text") or "" for p in pages}
-            expanded = tree.expand_structure(
-                structure, [texts.get(n, "") for n in range(1, page_count + 1)], llm, expand_model
-            )
-            if expanded and toc_source == "pages":
-                toc_source = "pages+expand"
+            if toc_source != "contents":  # the contents already hold the headings expand would look for
+                expanded = tree.expand_structure(structure, page_texts, llm, expand_model)
+                if expanded and toc_source == "pages":
+                    toc_source = "pages+expand"
             tree.split_long_leaves(
-                structure, [texts.get(n, "") for n in range(1, page_count + 1)], llm, expand_model
+                structure, page_texts, llm, expand_model, headings=toc_source != "contents"
             )
         structure = tree.wrap_in_root(structure, doc_title, page_count)
         tree.relabel(structure)

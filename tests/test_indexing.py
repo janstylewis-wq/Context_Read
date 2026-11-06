@@ -101,13 +101,17 @@ def test_pipeline_indexes_disney_release(engine, clean_files, fake_llm, bucket):
     assert sum(bool(n["text"]) for n, _ in nodes) >= len(nodes) - 3
     assert [m["start_index"] for m in record["md_tree"]] == [n["start_index"] for n, _ in nodes]
 
-    # one LLM call per node summary plus the description, all through the guard
-    assert len(client.calls) == len(nodes) + 1 == stats["summarized"] + 1
+    # the first 20 pages are checked for a table of contents (this release has none, so the layout tree stays)
+    contents = [c for c in client.calls if c["max_completion_tokens"] == tree.CONTENTS_MAX_TOKENS]
+    assert len(contents) == tree.CONTENTS_CHECK_PAGES and stats["toc_source"] != "contents"
+    # then one LLM call per node summary plus the description, all through the guard
+    calls = [c for c in client.calls if c not in contents]
+    assert len(calls) == len(nodes) + 1 == stats["summarized"] + 1
     # output stays bounded: the answer's own limit, or a reasoning model's floor (reasoning counts against it)
     reasoning = config.get_settings().is_reasoning(config.get_settings().llm_default_model)
     limit = budget.REASONING_MIN_TOKENS if reasoning else 150
-    assert all(c["max_completion_tokens"] <= limit for c in client.calls)
-    assert not reasoning or all("temperature" not in c for c in client.calls)
+    assert all(c["max_completion_tokens"] <= limit for c in calls)
+    assert not reasoning or all("temperature" not in c for c in calls)
 
     with session_scope(engine) as s:
         assert s.scalar(select(func.count()).select_from(Page).where(Page.file_id == reg["doc_id"])) == 22
