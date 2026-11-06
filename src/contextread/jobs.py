@@ -89,6 +89,22 @@ def run_one(worker_id: str, engine: Engine | None = None) -> bool:
     return True
 
 
+SUPERSEDED = "superseded: indexed directly"
+
+
+def close_queued(kind: str, file_id: str, engine: Engine | None = None) -> int:
+    """Mark the still-queued jobs of this kind for a file done: it was indexed without them (contextread index,
+    a tool calling the pipeline), and a worker would otherwise index it again later, billed again, before it
+    reaches new uploads. A job a worker is running is left alone."""
+    with session_scope(engine) as s:
+        result = s.execute(
+            update(Job)
+            .where(Job.kind == kind, Job.status == "queued", Job.payload["file_id"].astext == file_id)
+            .values(status="done", finished_at=func.now(), last_error=SUPERSEDED)
+        )
+        return result.rowcount
+
+
 def reclaim_stale(after: timedelta = timedelta(minutes=15), engine: Engine | None = None) -> int:
     """Requeue jobs whose worker died mid-run."""
     with session_scope(engine or get_engine()) as s:

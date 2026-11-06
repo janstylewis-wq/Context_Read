@@ -19,7 +19,7 @@ from sqlalchemy import Engine, delete, select
 from .. import storage
 from ..config import get_settings
 from ..db import session_scope
-from ..jobs import handler
+from ..jobs import close_queued, handler
 from ..llm import BudgetedLLM
 from ..models import Block as BlockRow
 from ..models import File, Page, UsageEvent
@@ -229,6 +229,7 @@ def index_document(
             ).first()
         if source is not None and reuse_duplicate:
             _copy_from_duplicate(engine, file, source)
+            close_queued("index_document", file_id, engine)
             return {"file_id": file_id, "duplicate_of": source.id}
 
         doc = _open_pdf(data)
@@ -336,6 +337,7 @@ def index_document(
             "seconds": round(time.monotonic() - started, 1),
         }
         log.info("indexed %s", stats)
+        close_queued("index_document", file_id, engine)  # its upload's job, when indexed without the worker
         return stats
     except IndexingError as e:
         _update(engine, file_id, status="failed", error_message=str(e))
