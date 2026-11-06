@@ -26,6 +26,23 @@ them sends more pages to the vision model.
 
 ## 2. Tree: from text to sections
 
+`contextread show` says where a document's outline came from (`outline from:`):
+
+| Value | Meaning |
+|---|---|
+| `contents` | Its table of contents |
+| `detected` / `hybrid` | Layout headings |
+| `bookmarks` | The PDF's own bookmarks |
+| `headings` | Title blocks of pages the vision model read (mostly scanned documents) |
+| `pages` / `pages+expand` | No structure found: page groups, then expand |
+
+0. **Table of contents.** When `CONTENTS_OUTLINE` is on (the default), the first 20 pages are checked for a
+   contents page, one `TREE_EXPAND_MODEL` call per page. If the contents give page numbers, each entry is
+   placed on its real page: printed numbers are shifted by the offset between printed and real pages, each
+   entry is checked to appear on its page (one call per entry), and misplaced entries are corrected. If more
+   than 60% are found, those entries are the tree, and steps 1-3 are skipped. Long sections are still split
+   in step 4. This is how PageIndex classic builds a tree. A contract's contents list every section,
+   including ones whose headings are set like body text.
 1. **Layout headings.** Headings found by layout analysis (font size, weight, numbering) become the tree.
    Headings set like body text, common in contracts and filings, are often missed.
 2. **Expand.** `TREE_EXPAND_MODEL` reads sections the layout left whole and splits them into their
@@ -73,6 +90,8 @@ affected. Chat settings apply on the next question.
 | Answer inside a long, unsplit section | `SECTION_SPLIT_PAGES`, `SECTION_SPLIT_CHARS` | lower | re-index; more parts, more summary calls |
 | Parts too coarse to point at the page | `SPLIT_PART_PAGES` | lower (3-4) | re-index; more parts |
 | Printed headings missing from the tree | `SECTION_HEADINGS_PAGES`, `TREE_EXPAND_MODEL` | lower; make sure it isn't `off` | re-index; more expand calls |
+| Sections on the wrong pages, from a table of contents (`outline from: contents`) | `CONTENTS_OUTLINE` | `false` for that kind of document, then compare | re-index; the layout tree instead |
+| A document has a table of contents but `outline from:` is not `contents` | none | it may lack page numbers, start after page 20, or have most entries not found on their page | report it with the document |
 | Vague or placeholder summaries | `LLM_DEFAULT_MODEL` | stronger model | re-index; summary cost rises |
 | Fact deep in a long section missing from its summary | `SUMMARY_INPUT_CHARS` | higher | re-index; longer summary calls |
 | Garbled text on scan-like pages | `SCAN_IMAGE_SHARE`, `SCAN_INK_WITHOUT_TEXT` | lower | re-index; more vision calls |

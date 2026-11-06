@@ -47,7 +47,8 @@ measured with the `tune` skill.
      its text against `SECTION_SPLIT_CHARS`.
    - A heading printed on the page (look at the page text) is not in the tree: the layout missed it, and the
      headings pass didn't recover it. Is `TREE_EXPAND_MODEL` off, or the section under
-     `SECTION_HEADINGS_PAGES`?
+     `SECTION_HEADINGS_PAGES`? Check `outline from:` in the `show` header. A document whose tree comes
+     from its `contents` has exactly the headings its table of contents lists.
    - The section is right but its summary is vague, generic, or full of placeholders such as "$X million": a
      weak summary. The summary model is `LLM_DEFAULT_MODEL`, and it reads the section's first
      `SUMMARY_INPUT_CHARS` characters, so a fact deep in a long section may never reach it.

@@ -81,7 +81,8 @@ All settings go in `.env`. The ones you are most likely to change:
 | `CHAT_MODEL` | `gpt-6-luna` | Model that answers questions (reasoning models run at low effort) |
 | `LLM_DEFAULT_MODEL` | `gpt-4o-mini` | Section summaries and document descriptions |
 | `OCR_VLM_MODEL` | `gpt-6-luna` | Reads scanned and image pages (`off` = Tesseract only) |
-| `TREE_EXPAND_MODEL` | `gpt-6-luna` | Splits sections over 5 pages into their headings or 5-page parts (`off` = layout tree only) |
+| `TREE_EXPAND_MODEL` | `gpt-6-luna` | Splits sections over 5 pages into their headings or 5-page parts, and reads tables of contents (`off` = layout tree only) |
+| `CONTENTS_OUTLINE` | `true` | A document with a table of contents (page numbers given, in its first 20 pages) takes its outline from it |
 | `LLM_TIMEOUT_SECONDS` | `90` | A stalled model call is cut off and retried (twice) |
 | `LLM_CACHE` | `true` | Identical model requests are answered from `~/.cache/contextread/llm` |
 | `PAGE_LIMIT`, `CHAT_LIMIT` | `0` | Per-user limits for the API (0 = none) |
@@ -133,9 +134,12 @@ this?" or "tune it for my scanned reports".
 1. **Pages.** Each page's text layer is split into blocks (headings, paragraphs, lists, tables) with their
    positions. A page with no usable text (a scan, or text drawn as outlines) is read by the vision model in
    one call, which returns its blocks and their positions.
-2. **Tree.** Headings become a tree of sections. A section over 5 pages is checked for headings the layout
-   missed. One over 10 pages without headings is split into 5-page parts titled by what they cover.
-   Every section gets a short summary.
+2. **Tree.** A document with a table of contents in its first 20 pages, with page numbers, takes its
+   outline from it, as PageIndex classic does. Each entry is placed on its real page and checked to appear
+   there. Otherwise, the headings found by layout analysis become the tree, and a section over 5 pages is
+   checked for headings the layout missed. Either way, a section over 10 pages without headings is split
+   into 5-page parts titled by what they cover. Every section gets a short summary, written only from its
+   own text, subsections included.
 3. **Answers.** The chat agent sees the whole tree, picks pages, reads them, and is told which pages it has
    not read yet. A reply that only says what it will read next is sent back to continue.
 

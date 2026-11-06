@@ -131,6 +131,7 @@ def show(owner: tuple[str, str], ref: str, summaries: bool = False, pages: str |
     print(
         f"status {record['status']}; {record['page_num']} pages (read as: {how}); index version {record['index_version']}"
     )
+    print(f"outline from: {(record.get('config') or {}).get('toc_source', 'unknown')}")
     if record.get("error_message"):
         print(f"error: {record['error_message']}")
     if record.get("description"):

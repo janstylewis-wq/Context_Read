@@ -13,7 +13,7 @@ def test_show_prints_the_tree_and_chosen_pages(engine, clean_files, fake_llm, bu
     pipeline.index_document(reg["doc_id"], llm=llm, engine=engine)
     diagnostics.show(("user", "user-test"), "q1-fy25-earnings.pdf", summaries=True, pages="13")
     out = capsys.readouterr().out
-    assert "22 pages (read as: 22 text)" in out
+    assert "22 pages (read as: 22 text)" in out and "outline from: " in out
     assert "- [0000] THE WALT DISNEY COMPANY REPORTS FIRST QUARTER EARNINGS FOR FISCAL 2025 (p1-22)" in out
     assert "A short factual summary." in out  # --summaries
     assert "===== page 13 (read as text;" in out and "===== page 14" not in out
