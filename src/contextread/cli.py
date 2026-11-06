@@ -7,6 +7,7 @@ contextread list               the indexed documents and their ids
 contextread ask "Q" --doc ID   answer a question from one or more documents
 contextread serve / worker     run the API server / the indexing worker
 contextread create-key         create a user and an API key for the API and MCP server
+contextread eval make/run/compare   measure answers on your own documents
 """
 
 import argparse
@@ -130,6 +131,58 @@ def _index(args) -> None:
             print(f"\n[{node['node_id']}] {node['title']}\n  {node.get('summary', '')}")
 
 
+def _write_new(path: Path, data, force: bool) -> None:
+    if path.exists() and not force:
+        raise SystemExit(f"{path} exists (use --force to overwrite)")
+    path.write_text(json.dumps(data, indent=1, ensure_ascii=False))
+
+
+def _eval_make(args) -> None:
+    from . import eval as ev
+
+    owner = ("user", args.owner)
+    docs = args.doc or ev.completed_documents(owner)
+    if not docs:
+        raise SystemExit("no indexed documents (contextread index FILE.pdf first)")
+    if Path(args.out).exists() and not args.force:  # checked before any billed call
+        raise SystemExit(f"{args.out} exists (use --force to overwrite)")
+    llm = BudgetedLLM()
+    before = llm.spent()
+    questions = ev.make_questions(owner, docs, llm, per_doc=args.per_doc, model=args.model, seed=args.seed)
+    _write_new(Path(args.out), questions, force=True)
+    print(
+        f"wrote {len(questions)} questions from {len(docs)} documents to {args.out} (${llm.spent() - before:.4f})\n"
+        f"read them through, fix or drop any that are unclear, then: contextread eval run {args.out}"
+    )
+
+
+def _eval_run(args) -> None:
+    from . import eval as ev
+
+    questions = json.loads(Path(args.questions).read_text())
+    earlier = json.loads(Path(args.against).read_text()) if args.against else None
+    out = Path(args.out or f"results-{time.strftime('%Y%m%d-%H%M%S')}.json")
+    if out.exists() and not args.force:  # checked before any billed call
+        raise SystemExit(f"{out} exists (use --force to overwrite)")
+    llm = BudgetedLLM(cache=None if args.cache else False)
+    before = llm.spent()
+    print(
+        f"asking {len(questions)} questions ({'cache on' if args.cache else 'cache off: fresh answers'}) ..."
+    )
+    results = ev.run_questions(("user", args.owner), questions, llm, judge_model=args.judge_model)
+    _write_new(out, results, force=True)
+    print(ev.report(results, llm.spent() - before))
+    print(f"\nresults in {out}")
+    if earlier is not None:
+        print("\n" + ev.compare(earlier, results))
+
+
+def _eval_compare(args) -> None:
+    from . import eval as ev
+
+    print(ev.compare(json.loads(Path(args.before).read_text()), json.loads(Path(args.after).read_text())))
+
+
 def _create_key(args) -> None:
     user_id = auth.ensure_user(args.email)
     secret, key_id = auth.create_api_key(user_id, args.product, args.name)
@@ -191,6 +244,33 @@ def main() -> None:
     k.add_argument("--product", choices=["cloud", "search"], default="cloud")
     k.add_argument("--name")
     k.set_defaults(func=_create_key)
+
+    ev = sub.add_parser("eval", help="measure answers on your own documents")
+    evs = ev.add_subparsers(required=True)
+    em = evs.add_parser("make", help="write questions from pages of indexed documents (answer page known)")
+    em.add_argument("--doc", action="append", help="document id or name (repeat); default: all indexed")
+    em.add_argument("--per-doc", type=int, default=5, help="questions per document")
+    em.add_argument("--out", default="questions.json")
+    em.add_argument("--model", help="model that writes the questions (default CHAT_MODEL)")
+    em.add_argument("--seed", type=int, default=0, help="which pages are picked")
+    em.add_argument("--owner", default="dev-user")
+    em.add_argument("--force", action="store_true", help="overwrite --out")
+    em.set_defaults(func=_eval_make)
+    er = evs.add_parser("run", help="ask each question in a new chat and judge the answers")
+    er.add_argument("questions", help="questions file (from eval make, or written by hand)")
+    er.add_argument("--out", help="results file (default results-<time>.json)")
+    er.add_argument("--against", help="an earlier results file: also list the questions that changed")
+    er.add_argument("--judge-model", help="model that judges the answers (default CHAT_MODEL)")
+    er.add_argument(
+        "--cache", action="store_true", help="reuse cached answers (default: fresh, as a user gets)"
+    )
+    er.add_argument("--owner", default="dev-user")
+    er.add_argument("--force", action="store_true", help="overwrite --out")
+    er.set_defaults(func=_eval_run)
+    ec = evs.add_parser("compare", help="the questions whose result changed between two runs")
+    ec.add_argument("before")
+    ec.add_argument("after")
+    ec.set_defaults(func=_eval_compare)
 
     args = parser.parse_args()
     args.func(args)

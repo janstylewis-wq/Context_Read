@@ -43,6 +43,29 @@ contextread ask "What was revenue in Q1?" --doc <id>
 | `contextread serve` | API server: REST, chat completions, MCP (`--host`, `--port`, `--reload`) |
 | `contextread worker` | Indexing worker for documents uploaded through the API |
 | `contextread create-key --email E` | Create a user and an API key for the API and MCP server |
+| `contextread eval make` | Write questions from pages of your indexed documents (`--doc`, `--per-doc`) |
+| `contextread eval run FILE` | Ask each question in a new chat and score the answers (`--against` an earlier run) |
+| `contextread eval compare A B` | The questions whose result changed between two runs |
+
+## Measuring on your documents
+
+```bash
+contextread eval make --per-doc 5             # questions.json: one question per chosen page, answer page known
+contextread eval run questions.json           # fresh answers (cache off), judged; prints the score and misses
+# change a setting in .env (re-index if it is an indexing one), then
+contextread eval run questions.json --against results-<time>.json
+```
+
+The report sorts each wrong answer into one of these:
+- **missed page:** the answer page was never opened, so the tree led elsewhere. Look at that part of the
+  tree, or the indexing settings.
+- **misread:** the page was read and the answer is still wrong.
+
+Generated questions and their expected answers can themselves be wrong. Read the questions file before
+relying on a score, and drop or fix the unclear ones. Questions you write yourself
+(`{"doc_name", "question", "answer", "page"}`, page optional) work the same way and usually measure better.
+Runs vary by a question or two out of 60, so compare scores across runs of the same file and treat small
+differences as noise. On a reasoning chat model, a question costs about $0.002.
 
 ## Settings
 
