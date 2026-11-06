@@ -27,9 +27,9 @@ confusing error several steps later.
 Prefer an isolated install so the package's dependencies (about 500 MB) don't mix with other projects:
 
 ```bash
-uv tool install "git+ssh://git@github.com/janstylewis-wq/contextread.git"   # or a fixed version: ...contextread.git@v0.3.0
+uv tool install "git+ssh://git@github.com/janstylewis-wq/Context_Read.git"   # or a fixed version: ...Context_Read.git@v0.3.0
 # without uv:
-python3 -m venv ~/.venvs/contextread && ~/.venvs/contextread/bin/pip install "git+ssh://git@github.com/janstylewis-wq/contextread.git"
+python3 -m venv ~/.venvs/contextread && ~/.venvs/contextread/bin/pip install "git+ssh://git@github.com/janstylewis-wq/Context_Read.git"
 ```
 
 Confirm with `contextread --help`.

@@ -9,9 +9,9 @@ read, with optional citations to the exact blocks. The same index serves a REST 
 Needs Python 3.12+, Docker (for Postgres and object storage) and access to this repository.
 
 ```bash
-pip install "git+https://github.com/janstylewis-wq/contextread.git"
+pip install "git+https://github.com/janstylewis-wq/Context_Read.git"
 # or a fixed version
-pip install "git+https://github.com/janstylewis-wq/contextread.git@v0.3.0"
+pip install "git+https://github.com/janstylewis-wq/Context_Read.git@v0.3.0"
 ```
 
 Scanned pages are read by a vision model. If that call fails, Tesseract is the fallback, so install it too
@@ -128,7 +128,7 @@ The repository is also a Claude Code plugin marketplace, with four skills for wo
 | `contextread:tune` | Change one setting at a time, re-index if needed, keep only what measurably helps |
 
 ```
-/plugin install contextread --marketplace janstylewis-wq/contextread
+/plugin install contextread --marketplace janstylewis-wq/Context_Read
 ```
 
 Then ask Claude things like "set up contextread", "how accurate is it on my contracts?", "why did it miss
@@ -151,7 +151,7 @@ this?" or "tune it for my scanned reports".
 ## Development
 
 ```bash
-git clone https://github.com/janstylewis-wq/contextread.git && cd contextread
+git clone https://github.com/janstylewis-wq/Context_Read.git && cd Context_Read
 uv sync --extra dev
 contextread init && docker compose up -d && contextread migrate
 .venv/bin/pytest                 # uses a throwaway database (contextread_test); no billed model calls
