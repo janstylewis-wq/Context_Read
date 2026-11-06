@@ -101,3 +101,13 @@ def test_a_model_the_caller_chose_is_kept(monkeypatch):
     llm = _structure_then_answer()
     result = _run(llm, monkeypatch, _tree(20, 200), model="gpt-4.1-nano")
     assert llm.models == [("gpt-4.1-nano", None)] * 2 and result.model == "gpt-4.1-nano"
+
+
+def test_a_reading_note_inside_a_short_reply_is_not_the_answer():
+    assert agent._planning_note("Likely the finding was normal. Need read page 133? The testimony, perhaps.")
+    assert agent._planning_note("The exhibit list continues; should check pages 40-42 for it.")
+    # real answers that mention pages or needs are kept
+    assert not agent._planning_note("The exhibit is listed on page 246 as ETH.MESH.03906527.")
+    assert not agent._planning_note(
+        "No. The plaintiff needs to show causation, and the court found she had not."
+    )

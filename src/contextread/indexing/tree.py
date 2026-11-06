@@ -472,13 +472,31 @@ def _close_ranges(nodes: list[dict], end: int) -> None:
 
 
 SUMMARY_PROMPT = (
-    "Summarize this section of a document in at most 60 words. State what it covers and its key facts "
-    "and figures; no preamble.\n\nSection title: {title}\nPages {start}-{end}\n{children}\nSection text:\n{text}"
+    "Summarize this section of a document in at most 60 words: what it covers and its key facts and figures, "
+    "taken only from the section text below. Never invent or estimate a figure, name or date, and never write "
+    "placeholders such as $X. If the text holds no more than a heading or a table-of-contents line, say in one "
+    "short sentence what the section is from its title and subsections, with no facts. No preamble."
+    "\n\nSection title: {title}\nPages {start}-{end}\n{children}\nSection text:\n{text}"
 )
 DESCRIPTION_PROMPT = (
     "Write a one-sentence description (at most 45 words) of this document, starting with "
     '"This document is". Name the organization and subject when known.\n\nTitle: {title}\nSections:\n{outline}'
 )
+
+
+def section_text(node: dict, limit: int) -> str:
+    """The section's whole text, its subsections' included, up to `limit` characters. A parent's own text runs
+    only from its heading to its first subsection's, often the heading alone; summarised from that, the model
+    has nothing to state and invents figures. The reference takes a node's text from all its pages likewise."""
+    parts, size = [], 0
+    for n, _ in preorder([node]):
+        t = n.get("text") or ""
+        if t:
+            parts.append(t)
+            size += len(t) + 2
+            if size >= limit:
+                break
+    return "\n\n".join(parts)[:limit]
 
 
 def summarize_nodes(
@@ -489,6 +507,8 @@ def summarize_nodes(
     nodes = [n for n, _ in preorder(structure) if not n.get("summary")]
     already = len(preorder(structure)) - len(nodes)
 
+    limit = get_settings().summary_input_chars
+
     def one(node: dict) -> bool:
         children = node.get("nodes") or []
         child_line = ("Subsections: " + "; ".join(c["title"] for c in children)) if children else ""
@@ -497,7 +517,7 @@ def summarize_nodes(
             start=node["start_index"],
             end=node["end_index"],
             children=child_line,
-            text=(node.get("text") or "")[: get_settings().summary_input_chars],
+            text=section_text(node, limit),
         )
         try:
             resp = llm.chat(

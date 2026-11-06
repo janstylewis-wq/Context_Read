@@ -30,9 +30,9 @@ from .vlm import VLM_SCALE, VisionReader, assess_page, read_page
 
 log = logging.getLogger(__name__)
 
-PIPELINE_VERSION = (
-    5  # 4: flash expand splits sections the layout leaves whole; 5: long leaves split into windows
-)
+# 4: flash expand splits sections the layout leaves whole; 5: long leaves split into windows;
+# 6: a section is summarised from its whole text (subsections included), and only from that text
+PIPELINE_VERSION = 6
 THUMBNAIL_SCALE = 0.5
 HEADINGS_TREE_SHARE = (
     0.5  # the title-block tree replaces flash's only when this share of pages has no text layer

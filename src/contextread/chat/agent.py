@@ -21,7 +21,10 @@ from ..llm import BudgetedLLM
 PLANNING_NOTE_CHARS = 300
 PLANNING_NOTE = re.compile(
     r"^\W*(?:need\b|let me\b|i(?:'|’)ll\b|i will\b|i need\b|i should\b|next\b|now i\b|checking\b|looking\b)"
-    r"|\b(?:i(?:'|’)ll|i will|let me|i need to)\s+(?:check|read|look|open|review|see|get|fetch|search)\b",
+    r"|\b(?:i(?:'|’)ll|i will|let me|i need to)\s+(?:check|read|look|open|review|see|get|fetch|search)\b"
+    # anywhere in a short reply: a note about reading pages, "Need read page 133?", "should check pages 4-6"
+    r"|\b(?:need(?:s)?|should|must)\s+(?:to\s+)?(?:read|check|look\s+at|open|see|review)\s+(?:the\s+)?(?:page|pages|p\.)\s*\d"
+    r"|\bpages?\s+\d+(?:\s*-\s*\d+)?\s*\?",
     re.I,
 )
 CONTINUE = "Continue: call the tools to read what you need, then give your answer."
