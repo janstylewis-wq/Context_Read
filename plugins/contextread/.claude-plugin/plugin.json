@@ -1,8 +1,8 @@
 {
   "name": "contextread",
-  "version": "0.3.0",
-  "description": "Set up ContextRead, measure its answers on your own documents, find why it misses, and tune it.",
+  "version": "0.3.1",
+  "description": "Set up ContextRead: install, .env, Docker, checks and a first indexed document.",
   "author": { "name": "janstylewis-wq" },
   "repository": "https://github.com/janstylewis-wq/Context_Read",
-  "keywords": ["documents", "pdf", "rag", "evaluation", "tuning"]
+  "keywords": ["documents", "pdf", "rag", "setup"]
 }

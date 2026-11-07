@@ -6,12 +6,12 @@ read, with optional citations to the exact blocks. The same index serves a REST 
 
 ## Install
 
-Needs Python 3.12+, Docker (for Postgres and object storage) and access to this repository.
+Needs Python 3.12+ and Docker (for Postgres and object storage).
 
 ```bash
 pip install "git+https://github.com/janstylewis-wq/Context_Read.git"
 # or a fixed version
-pip install "git+https://github.com/janstylewis-wq/Context_Read.git@v0.3.0"
+pip install "git+https://github.com/janstylewis-wq/Context_Read.git@v0.3.1"
 ```
 
 Scanned pages are read by a vision model. If that call fails, Tesseract is the fallback, so install it too
@@ -118,21 +118,26 @@ indexed after the change; re-index a document to apply them to it.
 
 ## Claude skills
 
-The repository is also a Claude Code plugin marketplace, with four skills for working with ContextRead:
+The repository is also a Claude Code plugin marketplace with two plugins. `contextread` is the one most people
+need; `contextread-quality` is optional, for measuring and improving answers on your own documents.
 
-| Skill | For |
-|---|---|
-| `contextread:setup` | Install, `.env` (provider, model names, spend cap), Docker, first document |
-| `contextread:evaluate` | Score answers on your documents with `contextread eval`, review the questions, explain misses |
-| `contextread:diagnose` | Trace a wrong answer through page text, tree and agent reads to its cause |
-| `contextread:tune` | Change one setting at a time, re-index if needed, keep only what measurably helps |
+| Plugin | Skill | For |
+|---|---|---|
+| `contextread` | `contextread:setup` | Install, `.env` (provider, model names, spend cap), Docker, first document |
+| `contextread-quality` (optional) | `contextread-quality:evaluate` | Score answers on your documents with `contextread eval`, review the questions, explain misses |
+| | `contextread-quality:diagnose` | Trace a wrong answer through page text, tree and agent reads to its cause |
+| | `contextread-quality:tune` | Change one setting at a time, re-index if needed, keep only what measurably helps |
+
+In Claude Code:
 
 ```
-/plugin install contextread --marketplace janstylewis-wq/Context_Read
+/plugin marketplace add janstylewis-wq/Context_Read
+/plugin install contextread@contextread
+/plugin install contextread-quality@contextread      # optional
 ```
 
-Then ask Claude things like "set up contextread", "how accurate is it on my contracts?", "why did it miss
-this?" or "tune it for my scanned reports".
+Then ask Claude things like "set up contextread", and with the optional plugin "how accurate is it on my
+contracts?", "why did it miss this?" or "tune it for my scanned reports".
 
 ## How it works
 

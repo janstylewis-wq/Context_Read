@@ -1,6 +1,6 @@
 [project]
 name = "contextread"
-version = "0.3.0"
+version = "0.3.1"
 description = "Traceable answers from long documents: PDFs indexed into a tree of sections, a chat agent that reads the right pages, REST and MCP APIs"
 readme = "README.md"
 requires-python = ">=3.12"

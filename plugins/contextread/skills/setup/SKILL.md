@@ -17,8 +17,6 @@ confusing error several steps later.
 
 - Python 3.12 or newer (`python3 --version`).
 - Docker with compose (`docker compose version`).
-- Access to the repository. It is private, so the person needs GitHub access: an SSH key or a logged-in
-  `gh`/git credential helper.
 - Optional: Tesseract (`apt install tesseract-ocr` / `brew install tesseract`). It is the fallback when the
   vision model fails on a scanned page. Without it, such a page is left without text.
 
@@ -27,9 +25,9 @@ confusing error several steps later.
 Prefer an isolated install so the package's dependencies (about 500 MB) don't mix with other projects:
 
 ```bash
-uv tool install "git+ssh://git@github.com/janstylewis-wq/Context_Read.git"   # or a fixed version: ...Context_Read.git@v0.3.0
+uv tool install "git+https://github.com/janstylewis-wq/Context_Read.git"   # or a fixed version: ...Context_Read.git@v0.3.1
 # without uv:
-python3 -m venv ~/.venvs/contextread && ~/.venvs/contextread/bin/pip install "git+ssh://git@github.com/janstylewis-wq/Context_Read.git"
+python3 -m venv ~/.venvs/contextread && ~/.venvs/contextread/bin/pip install "git+https://github.com/janstylewis-wq/Context_Read.git"
 ```
 
 Confirm with `contextread --help`.
@@ -121,4 +119,6 @@ For a sense of cost: a 22-page earnings release took about $0.004 to index with 
 Scanned pages cost more, because each one is a vision call. Before indexing a large batch, index one
 typical document and multiply its cost.
 
-When this works, suggest measuring answers on their own documents with the `evaluate` skill.
+When this works, mention that measuring and improving answers on their own documents is optional and comes
+in a second plugin, `contextread-quality` (skills `evaluate`, `diagnose`, `tune`), installed with
+`/plugin install contextread-quality@contextread`. Don't install it for them unless they ask.

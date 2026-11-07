@@ -1,6 +1,6 @@
 {
   "name": "contextread",
-  "description": "Claude skills for ContextRead: setup, evaluate, diagnose, tune.",
+  "description": "Claude skills for ContextRead: setup, plus optional evaluate, diagnose and tune.",
   "owner": {
     "name": "janstylewis-wq"
   },
@@ -8,7 +8,12 @@
     {
       "name": "contextread",
       "source": "./plugins/contextread",
-      "description": "Set up ContextRead, measure its answers on your own documents, find why it misses, and tune it."
+      "description": "Set up ContextRead: install, .env, Docker, checks and a first indexed document."
+    },
+    {
+      "name": "contextread-quality",
+      "source": "./plugins/contextread-quality",
+      "description": "Optional: measure ContextRead's answers on your own documents, find why it misses, and tune it."
     }
   ]
 }
